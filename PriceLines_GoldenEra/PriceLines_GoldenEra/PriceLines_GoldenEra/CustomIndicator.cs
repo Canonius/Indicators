@@ -7,7 +7,7 @@ namespace CustomIndicator
 {
     public class CustomIndicator : IndicatorInterface
     {
-        // ========= Eingabe-Parameter (im UI veränderbar) =========
+        // ========= Eingabe-Parameter =========
 
         [Input(Name = "Linien oben")]
         public int LinesAbove = 10;
@@ -24,13 +24,12 @@ namespace CustomIndicator
         [Input(Name = "Step/Zonen in Points() statt Preis?")]
         public bool UsePointUnits = false;
 
-        // --- Steuerung der 3. Zone (um das aktuelle runde Level) ---
+        // 3. Zone (um aktuelles rundes Level)
         [Input(Name = "Mittlere Zone immer zeichnen?")]
         public bool AlwaysMiddleZone = true;
 
-        // WICHTIG: Default NICHT 0 setzen (manche UIs verlangen Minimum > 0)
         [Input(Name = "Toleranz für 'auf Rundungslevel'")]
-        public double OnLevelTolerance = 0.1; // vorher 0.0 -> OutOfRange bei manchen Builds
+        public double OnLevelTolerance = 0.1; // >0 als Default
 
         // Hauptlinien-Style
         public enum ColorChoice { Red, Gray, Black, Blue, Green, Orange, Magenta, Cyan }
@@ -61,91 +60,244 @@ namespace CustomIndicator
         [Input(Name = "Objekte auswählbar")]
         public bool SelectableObjects = false;
 
-        // Prefixe, damit wir nur "unsere" Linien verwalten
+        // Marker-Optionen
+        [Input(Name = "Signale aktivieren")]
+        public bool EnableSignals = true;
+
+        [Input(Name = "Marker-Abstand (vertikal)")]
+        public double MarkerOffset = 0.5;
+
+        [Input(Name = "Bull-Marker-Farbe")]
+        public ColorChoice BullMarkerColor = ColorChoice.Green;
+
+        [Input(Name = "Bear-Marker-Farbe")]
+        public ColorChoice BearMarkerColor = ColorChoice.Red;
+
+        [Input(Name = "Marker-Schriftgröße")]
+        public int MarkerFontSize = 12;
+
+        [Input(Name = "Marker fett")]
+        public bool MarkerBold = true;
+
+        // Signalmodus
+        public enum SignalMode { TouchThenZoneClose = 0, OpenSideThenZoneClose = 1 }
+
+        [Input(Name = "Signalmodus")]
+        public SignalMode Mode = SignalMode.TouchThenZoneClose; // Standard
+
+        // Max. Anzahl Markierungen (FIFO)
+        [Input(Name = "Maximale Anzahl Markierungen")]
+        public int MaxSignals = 200;
+
+        // Prefixe
         private const string PrefixMain = "NM_PL_MAIN_";
         private const string PrefixZone = "NM_PL_ZONE_";
+        private const string PrefixSig = "NM_PL_SIG_";
+
+        // Bar-Close-Erkennung
+        private DateTime _lastBar0Time = DateTime.MinValue;
+
+        // FIFO der Signal-Objekte
+        private readonly Queue<string> _signalObjects = new Queue<string>();
+
+        // ======= Neu: Anti-Doppel-Signal pro Level =======
+        private enum SignalSide { None = 0, Bull = 1, Bear = 2 }
+        private readonly Dictionary<double, SignalSide> _lastSidePerLevel = new Dictionary<double, SignalSide>();
+        // ==================================================
 
         public override void OnInit()
         {
             Indicator_Separate_Window = false;
-            SetIndicatorShortName("Price Lines (Round Levels)");
+            SetIndicatorShortName("------ Price Lines (Round Levels) + Signals");
             SetIndicatorDigits((int)Digits());
         }
 
         public override void OnCalculate(int index)
         {
-            // Sicherheitschecks
-            if (LinesAbove < 0) LinesAbove = 0;
-            if (LinesBelow < 0) LinesBelow = 0;
-
+            // Einheiten & Parameter
             double unit = UsePointUnits ? Math.Max(Point(), 1e-12) : 1.0;
             double step = Math.Max(Sanitize(Step) * unit, 1e-12);
             double zOff = Math.Max(Sanitize(PsychOffset) * unit, 0.0);
-
-            // Toleranz: niemals 0 (um UI/Min-Restriktionen & logische Checks zu vermeiden)
+            double mOff = Math.Max(Sanitize(MarkerOffset) * unit, 0.0);
             double tolRaw = Sanitize(OnLevelTolerance) * (UsePointUnits ? Math.Max(Point(), 1e-12) : 1.0);
-            double tol = Math.Max(tolRaw, 1e-9); // mini-positiv
+            double tol = Math.Max(tolRaw, 1e-9);
 
-            // Aktueller Preis (Close der letzten Kerze)
+            // Linien/Zonen (aktueller Snapshot)
             double currentPrice = Close(0);
+            double baseLevelNow = RoundToStep(currentPrice, step);
 
-            // Basis-Level: nächstliegende Rundung zur Schrittweite
-            double baseLevel = RoundToStep(currentPrice, step);
-
-            // Bevor wir neu zeichnen, alte eigene Linien löschen
             DeleteExistingWithPrefix(PrefixMain);
             DeleteExistingWithPrefix(PrefixZone);
 
-            // === Hauptlinien ===
-            // Mittlere Hauptlinie am aktuellen runden Level (dein Wunsch)
-            CreateHLine($"{PrefixMain}MID_0", baseLevel, ToColor(MainColor), MainLineStyle, MainLineWidth);
+            CreateHLine($"{PrefixMain}MID_0", baseLevelNow, ToColor(MainColor), MainLineStyle, MainLineWidth);
 
-            // Hauptlinien oberhalb
             for (int i = 1; i <= LinesAbove; i++)
-            {
-                double level = baseLevel + i * step;
-                CreateHLine($"{PrefixMain}UP_{i}", level, ToColor(MainColor), MainLineStyle, MainLineWidth);
-            }
+                CreateHLine($"{PrefixMain}UP_{i}", baseLevelNow + i * step, ToColor(MainColor), MainLineStyle, MainLineWidth);
 
-            // Hauptlinien unterhalb
             for (int j = 1; j <= LinesBelow; j++)
+                CreateHLine($"{PrefixMain}DOWN_{j}", baseLevelNow - j * step, ToColor(MainColor), MainLineStyle, MainLineWidth);
+
+            double nextUpNow = (baseLevelNow >= currentPrice) ? baseLevelNow : baseLevelNow + step;
+            double prevDownNow = (baseLevelNow <= currentPrice) ? baseLevelNow : baseLevelNow - step;
+
+            CreateZone($"{PrefixZone}UP", nextUpNow, zOff);
+            CreateZone($"{PrefixZone}DN", prevDownNow, zOff);
+
+            bool onBaseNow = Math.Abs(currentPrice - baseLevelNow) <= tol;
+            if (AlwaysMiddleZone || onBaseNow)
+                CreateZone($"{PrefixZone}MID", baseLevelNow, zOff);
+
+            // Bar-Close-Erkennung & Signale
+            if (!EnableSignals || Bars() < 2) return;
+
+            DateTime bar0Time = Time(0);
+            bool newBarStarted = bar0Time != _lastBar0Time;
+
+            if (newBarStarted)
             {
-                double level = baseLevel - j * step;
-                CreateHLine($"{PrefixMain}DOWN_{j}", level, ToColor(MainColor), MainLineStyle, MainLineWidth);
+                _lastBar0Time = bar0Time;
+                ProcessSignalForBar(1, step, zOff, mOff);
             }
 
-            // === Psychologische Zonen (3 Stück) ===
-            // Nächster oberer/unterer Rundungs-Level relativ zum aktuellen Preis
-            double nextUp = (baseLevel >= currentPrice) ? baseLevel : baseLevel + step;
-            double prevDown = (baseLevel <= currentPrice) ? baseLevel : baseLevel - step;
-
-            // 1) Zone um das nächste obere Rundungslevel
-            CreateZone($"{PrefixZone}UP", nextUp, zOff);
-
-            // 2) Zone um das nächste untere Rundungslevel
-            CreateZone($"{PrefixZone}DN", prevDown, zOff);
-
-            // 3) Zone um das aktuelle runde Level:
-            //    a) Immer zeichnen, wenn AlwaysMiddleZone = true
-            //    b) Sonst nur, wenn |currentPrice - baseLevel| <= tol
-            bool onBase = Math.Abs(currentPrice - baseLevel) <= tol;
-            if (AlwaysMiddleZone || onBase)
+            if (_lastBar0Time == DateTime.MinValue && index > 1)
             {
-                CreateZone($"{PrefixZone}MID", baseLevel, zOff);
+                _lastBar0Time = bar0Time;
+                ProcessSignalForBar(1, step, zOff, mOff);
+            }
+        }
+
+        // ===================== Signalberechnung =====================
+
+        private void ProcessSignalForBar(int b, double step, double zOff, double mOff)
+        {
+            double openB = Open(b);
+            double closeB = Close(b);
+            double highB = High(b);
+            double lowB = Low(b);
+            DateTime t = Time(b);
+
+            // Basis: Open(b)
+            double baseLevelB = RoundToStep(openB, step);
+
+            // Für Altmodus
+            double nextUpB = (baseLevelB >= openB) ? baseLevelB : baseLevelB + step;
+            double prevDownB = (baseLevelB <= openB) ? baseLevelB : baseLevelB - step;
+            double upperTopB = nextUpB + zOff;
+            double lowerBotB = prevDownB - zOff;
+
+            bool bullSignal = false;
+            bool bearSignal = false;
+            double bullLevelUsed = double.NaN; // <- Level, auf dem das Signal basiert
+            double bearLevelUsed = double.NaN;
+
+            if (Mode == SignalMode.TouchThenZoneClose)
+            {
+                // Alle berührten runden Levels der Bar
+                double first = Math.Ceiling(lowB / step) * step;
+                double last = Math.Floor(highB / step) * step;
+
+                double? touchedClosestAboveOpen = null; // kleinstes berührtes Level >= open
+                double? touchedClosestBelowOpen = null; // größtes  berührtes Level <= open
+
+                if (last >= first)
+                {
+                    for (double lvl = first; lvl <= last + 1e-10; lvl += step)
+                    {
+                        double level = Normalize(lvl);
+                        if (level >= openB)
+                        {
+                            if (touchedClosestAboveOpen == null || level < touchedClosestAboveOpen.Value)
+                                touchedClosestAboveOpen = level;
+                        }
+                        if (level <= openB)
+                        {
+                            if (touchedClosestBelowOpen == null || level > touchedClosestBelowOpen.Value)
+                                touchedClosestBelowOpen = level;
+                        }
+                    }
+                }
+
+                if (touchedClosestAboveOpen != null || (last >= first))
+                {
+                    double usedLevel = touchedClosestAboveOpen ?? Normalize(first);
+                    double usedUpperTop = usedLevel + zOff;
+                    bullSignal = closeB > usedUpperTop;
+                    bullLevelUsed = usedLevel;
+                }
+
+                if (touchedClosestBelowOpen != null || (last >= first))
+                {
+                    double usedLevel = touchedClosestBelowOpen ?? Normalize(last);
+                    double usedLowerBot = usedLevel - zOff;
+                    bearSignal = closeB < usedLowerBot;
+                    bearLevelUsed = usedLevel;
+                }
+            }
+            else // OpenSideThenZoneClose
+            {
+                bullSignal = (openB < nextUpB) && (closeB > upperTopB);
+                bearSignal = (openB > prevDownB) && (closeB < lowerBotB);
+                bullLevelUsed = nextUpB;
+                bearLevelUsed = prevDownB;
+            }
+
+            // ======= Neu: pro Level keine gleiche Richtung zweimal hintereinander =======
+            if (bullSignal && !double.IsNaN(bullLevelUsed))
+            {
+                if (AllowedForLevel(bullLevelUsed, SignalSide.Bull))
+                {
+                    string name = $"{PrefixSig}BULL_{t:yyyyMMdd_HHmmss}";
+                    double y = highB + mOff;
+                    CreateTriangleText(name, t, y, "▲", ToColor(BullMarkerColor));
+                    AddSignalObject(name);
+                }
+            }
+
+            if (bearSignal && !double.IsNaN(bearLevelUsed))
+            {
+                if (AllowedForLevel(bearLevelUsed, SignalSide.Bear))
+                {
+                    string name = $"{PrefixSig}BEAR_{t:yyyyMMdd_HHmmss}";
+                    double y = lowB - mOff;
+                    CreateTriangleText(name, t, y, "▼", ToColor(BearMarkerColor));
+                    AddSignalObject(name);
+                }
+            }
+            // ============================================================================
+
+        }
+
+        // Gibt true zurück, wenn auf diesem Level die Richtung erlaubt ist (nicht doppelt),
+        // und aktualisiert die Merker-Map entsprechend.
+        private bool AllowedForLevel(double level, SignalSide side)
+        {
+            double key = Normalize(level); // stabiler Key
+            if (_lastSidePerLevel.TryGetValue(key, out var prev) && prev == side)
+                return false;
+
+            _lastSidePerLevel[key] = side;
+            return true;
+        }
+
+        // FIFO-Handling für Markierungen
+        private void AddSignalObject(string name)
+        {
+            _signalObjects.Enqueue(name);
+            if (MaxSignals < 1) MaxSignals = 1;
+
+            while (_signalObjects.Count > MaxSignals)
+            {
+                string oldest = _signalObjects.Dequeue();
+                ObjectDelete(oldest);
             }
         }
 
         // ===================== Hilfsfunktionen =====================
 
-        private static double Sanitize(double v)
-        {
-            if (double.IsNaN(v) || double.IsInfinity(v)) return 0.0;
-            return v;
-        }
+        private static double Sanitize(double v) => (double.IsNaN(v) || double.IsInfinity(v)) ? 0.0 : v;
 
         private double RoundToStep(double price, double step)
         {
-            // Rundet auf das nächste Vielfache von "step"
             double k = price / step;
             double r = Math.Round(k, 0, MidpointRounding.AwayFromZero);
             return r * step;
@@ -153,14 +305,13 @@ namespace CustomIndicator
 
         private void CreateZone(string tag, double level, double offset)
         {
-            // Zeichnet obere/untere gestrichelte Zonenlinie um "level"
             CreateHLine($"{tag}_TOP", level + offset, ToColor(ZoneColor), ZoneLineStyle, ZoneLineWidth);
             CreateHLine($"{tag}_BOTTOM", level - offset, ToColor(ZoneColor), ZoneLineStyle, ZoneLineWidth);
         }
 
         private void CreateHLine(string name, double price, Color color, LineStyle style, int width)
         {
-            // Horizontale Linie: nur der Preis ist relevant (Time = DateTime.MinValue)
+            ObjectDelete(name); // doppelte Namen vermeiden
             ObjectCreate(name, ObjectType.OBJ_HLINE, DateTime.MinValue, Normalize(price));
             ObjectSet(name, ObjectProperty.OBJPROP_COLOR, color);
             ObjectSet(name, ObjectProperty.OBJPROP_STYLE, style);
@@ -169,9 +320,19 @@ namespace CustomIndicator
             ObjectSet(name, ObjectProperty.OBJPROP_SELECTABLE, SelectableObjects);
         }
 
+        private void CreateTriangleText(string name, DateTime time, double price, string symbol, Color color)
+        {
+            ObjectDelete(name);
+            ObjectCreate(name, ObjectType.OBJ_TEXT, time, Normalize(price));
+            string font = MarkerBold ? "Segoe UI Semibold" : "Segoe UI";
+            ObjectSetText(name, symbol, Math.Max(8, MarkerFontSize), font, color);
+            ObjectSet(name, ObjectProperty.OBJPROP_COLOR, color);
+            ObjectSet(name, ObjectProperty.OBJPROP_LOCKED, LockObjects);
+            ObjectSet(name, ObjectProperty.OBJPROP_SELECTABLE, SelectableObjects);
+        }
+
         private double Normalize(double price)
         {
-            // Preis auf Symbolpräzision runden
             int d = (int)Digits();
             if (d <= 0) return price;
             double factor = Math.Pow(10.0, d);
@@ -180,7 +341,6 @@ namespace CustomIndicator
 
         private void DeleteExistingWithPrefix(string prefix)
         {
-            // Alle HLINE-Objekte einsammeln und die mit unserem Prefix entfernen
             int total = ObjectTotal(ObjectType.OBJ_HLINE);
             List<string> toDelete = new List<string>(capacity: total);
 
@@ -190,7 +350,6 @@ namespace CustomIndicator
                 if (!string.IsNullOrEmpty(name) && name.StartsWith(prefix, StringComparison.Ordinal))
                     toDelete.Add(name);
             }
-
             foreach (var n in toDelete)
                 ObjectDelete(n);
         }

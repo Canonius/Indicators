@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36518.9 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PriceLines_GoldenEra", "PriceLines_GoldenEra\PriceLines_GoldenEra.csproj", "{CFEAA04E-0771-4BDA-A48A-8F209C9675E1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|ARM64 = Debug|ARM64
+		Release|Any CPU = Release|Any CPU
+		Release|ARM64 = Release|ARM64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CFEAA04E-0771-4BDA-A48A-8F209C9675E1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CFEAA04E-0771-4BDA-A48A-8F209C9675E1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CFEAA04E-0771-4BDA-A48A-8F209C9675E1}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{CFEAA04E-0771-4BDA-A48A-8F209C9675E1}.Debug|ARM64.Build.0 = Debug|ARM64
+		{CFEAA04E-0771-4BDA-A48A-8F209C9675E1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CFEAA04E-0771-4BDA-A48A-8F209C9675E1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CFEAA04E-0771-4BDA-A48A-8F209C9675E1}.Release|ARM64.ActiveCfg = Release|ARM64
+		{CFEAA04E-0771-4BDA-A48A-8F209C9675E1}.Release|ARM64.Build.0 = Release|ARM64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {6DE9443B-3FF6-4FB0-B501-CD207B761132}
+	EndGlobalSection
+EndGlobal

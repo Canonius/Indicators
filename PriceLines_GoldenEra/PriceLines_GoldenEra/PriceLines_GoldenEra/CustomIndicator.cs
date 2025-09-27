@@ -28,8 +28,9 @@ namespace CustomIndicator
         [Input(Name = "Mittlere Zone immer zeichnen?")]
         public bool AlwaysMiddleZone = true;
 
+        // WICHTIG: Default NICHT 0 setzen (manche UIs verlangen Minimum > 0)
         [Input(Name = "Toleranz für 'auf Rundungslevel'")]
-        public double OnLevelTolerance = 0.0; // nur relevant, wenn AlwaysMiddleZone = false
+        public double OnLevelTolerance = 0.1; // vorher 0.0 -> OutOfRange bei manchen Builds
 
         // Hauptlinien-Style
         public enum ColorChoice { Red, Gray, Black, Blue, Green, Orange, Magenta, Cyan }
@@ -81,8 +82,9 @@ namespace CustomIndicator
             double step = Math.Max(Sanitize(Step) * unit, 1e-12);
             double zOff = Math.Max(Sanitize(PsychOffset) * unit, 0.0);
 
-            // Toleranz für "auf Rundungslevel"
-            double tol = Math.Max(Sanitize(OnLevelTolerance) * (UsePointUnits ? Math.Max(Point(), 1e-12) : 1.0), 0.0);
+            // Toleranz: niemals 0 (um UI/Min-Restriktionen & logische Checks zu vermeiden)
+            double tolRaw = Sanitize(OnLevelTolerance) * (UsePointUnits ? Math.Max(Point(), 1e-12) : 1.0);
+            double tol = Math.Max(tolRaw, 1e-9); // mini-positiv
 
             // Aktueller Preis (Close der letzten Kerze)
             double currentPrice = Close(0);
@@ -95,7 +97,7 @@ namespace CustomIndicator
             DeleteExistingWithPrefix(PrefixZone);
 
             // === Hauptlinien ===
-            // Mittlere Hauptlinie am aktuellen runden Level (neu)
+            // Mittlere Hauptlinie am aktuellen runden Level (dein Wunsch)
             CreateHLine($"{PrefixMain}MID_0", baseLevel, ToColor(MainColor), MainLineStyle, MainLineWidth);
 
             // Hauptlinien oberhalb
@@ -112,7 +114,7 @@ namespace CustomIndicator
                 CreateHLine($"{PrefixMain}DOWN_{j}", level, ToColor(MainColor), MainLineStyle, MainLineWidth);
             }
 
-            // === Psychologische Zonen ===
+            // === Psychologische Zonen (3 Stück) ===
             // Nächster oberer/unterer Rundungs-Level relativ zum aktuellen Preis
             double nextUp = (baseLevel >= currentPrice) ? baseLevel : baseLevel + step;
             double prevDown = (baseLevel <= currentPrice) ? baseLevel : baseLevel - step;
@@ -123,7 +125,7 @@ namespace CustomIndicator
             // 2) Zone um das nächste untere Rundungslevel
             CreateZone($"{PrefixZone}DN", prevDown, zOff);
 
-            // 3) Zone um das aktuelle runde Level (neu):
+            // 3) Zone um das aktuelle runde Level:
             //    a) Immer zeichnen, wenn AlwaysMiddleZone = true
             //    b) Sonst nur, wenn |currentPrice - baseLevel| <= tol
             bool onBase = Math.Abs(currentPrice - baseLevel) <= tol;
@@ -144,7 +146,6 @@ namespace CustomIndicator
         private double RoundToStep(double price, double step)
         {
             // Rundet auf das nächste Vielfache von "step"
-            // (AwayFromZero vermeidet Bias auf halben Schritten)
             double k = price / step;
             double r = Math.Round(k, 0, MidpointRounding.AwayFromZero);
             return r * step;

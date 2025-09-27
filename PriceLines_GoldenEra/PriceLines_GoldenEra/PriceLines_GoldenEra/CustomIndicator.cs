@@ -1,134 +1,182 @@
-﻿using IndicatorInterfaceCSharp;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
+using IndicatorInterfaceCSharp;
 
-namespace PriceDailyRange
+namespace CustomIndicator
 {
-    public class PriceDailyRange : IndicatorInterface
+    public class CustomIndicator : IndicatorInterface
     {
-        [Separator(Label = "Common")]
-        public string Separator_Common;
-        [Input(Name = "Delta points")]
-        public int DeltaParam = 0;
-        [Input(Name = "Start of day shift (hours)")]
-        public int TimeShiftParam = 0;
-        [Input(Name = "Apply to price")]
-        public Applied_Price ApplytoPrice;
+        // ========= Eingabe-Parameter (im UI veränderbar) =========
 
-        public IndicatorBuffer DailyPriceHiBuf = new IndicatorBuffer();
-        public IndicatorBuffer DailyPriceLoBuf = new IndicatorBuffer();
+        [Input(Name = "Linien oben")]
+        public int LinesAbove = 10;
+
+        [Input(Name = "Linien unten")]
+        public int LinesBelow = 10;
+
+        [Input(Name = "Schrittweite (Preis)")]
+        public double Step = 5.0;
+
+        [Input(Name = "Psych-Zonen Offset")]
+        public double PsychOffset = 0.5;
+
+        [Input(Name = "Step/Zonen in Points() statt Preis?")]
+        public bool UsePointUnits = false;
+
+        // Hauptlinien-Style
+        public enum ColorChoice { Red, Gray, Black, Blue, Green, Orange, Magenta, Cyan }
+
+        [Input(Name = "Hauptlinien-Farbe")]
+        public ColorChoice MainColor = ColorChoice.Red;
+
+        [Input(Name = "Hauptlinien-Stil")]
+        public LineStyle MainLineStyle = LineStyle.STYLE_SOLID;
+
+        [Input(Name = "Hauptlinien-Stärke")]
+        public int MainLineWidth = 1;
+
+        // Zonen-Style
+        [Input(Name = "Zonen-Farbe")]
+        public ColorChoice ZoneColor = ColorChoice.Gray;
+
+        [Input(Name = "Zonen-Stil")]
+        public LineStyle ZoneLineStyle = LineStyle.STYLE_DASH;
+
+        [Input(Name = "Zonen-Linienstärke")]
+        public int ZoneLineWidth = 1;
+
+        // Objekt-Eigenschaften
+        [Input(Name = "Objekte sperren (locked)")]
+        public bool LockObjects = true;
+
+        [Input(Name = "Objekte auswählbar")]
+        public bool SelectableObjects = false;
+
+        // Prefixe, damit wir nur "unsere" Linien verwalten
+        private const string PrefixMain = "NM_PL_MAIN_";
+        private const string PrefixZone = "NM_PL_ZONE_";
+
         public override void OnInit()
         {
-            SetIndicatorShortName("Price Daily Range");
             Indicator_Separate_Window = false;
-            SetIndexBuffer(0, DailyPriceHiBuf);
-            SetIndexStyle(0, DrawingStyle.DRAW_LINE, Color.Blue);
-            SetIndexLabel(0, "Up Band");
-            SetIndexBuffer(1, DailyPriceLoBuf);
-            SetIndexStyle(1, DrawingStyle.DRAW_LINE, Color.Red);
-            SetIndexLabel(1, "Down Band");
+            SetIndicatorShortName("Price Lines (Round Levels)");
+            SetIndicatorDigits((int)Digits());
         }
 
         public override void OnCalculate(int index)
         {
-            bool IsChangedHi, IsChangedLo;
-            double NewHi, NewLo, NowDate;
-            int i;
+            // Sicherheitschecks
+            if (LinesAbove < 0) LinesAbove = 0;
+            if (LinesBelow < 0) LinesBelow = 0;
 
-            //DateTime TimeShift = new DateTime()
-            if (index == 0)
-                return;
+            double unit = UsePointUnits ? Math.Max(Point(), 1e-12) : 1.0;
+            double step = Math.Max(Sanitize(Step) * unit, 1e-12);
+            double zOff = Math.Max(Sanitize(PsychOffset) * unit, 0.0);
 
-            if (index >= Bars() || index < 0)
+            // Aktueller Preis (Close der letzten Kerze)
+            double currentPrice = Close(0);
+
+            // Basis-Level: nächstliegende Rundung zur Schrittweite
+            double baseLevel = RoundToStep(currentPrice, step);
+
+            // Bevor wir neu zeichnen, alte eigene Linien löschen
+            DeleteExistingWithPrefix(PrefixMain);
+            DeleteExistingWithPrefix(PrefixZone);
+
+            // Hauptlinien oberhalb
+            for (int i = 1; i <= LinesAbove; i++)
             {
-                DailyPriceLoBuf[index] = 0;
-                DailyPriceHiBuf[index] = 0;
+                double level = baseLevel + i * step;
+                CreateHLine($"{PrefixMain}UP_{i}", level, ToColor(MainColor), MainLineStyle, MainLineWidth);
             }
-            else
-            if (DailyPriceLoBuf[index] == 0)
+
+            // Hauptlinien unterhalb
+            for (int j = 1; j <= LinesBelow; j++)
             {
-                IsChangedHi = false;
-                IsChangedLo = false;
-                NewHi = GetPriceHigh(index);
-                NewLo = GetPriceLow(index);
-
-                i = index + 1;
-
-                if (ShiftedDate(index, TimeShiftParam) == ShiftedDate(i, TimeShiftParam) && i < Bars())
-                {
-                    if (DailyPriceHiBuf[i] < NewHi)
-                        IsChangedHi = true;
-
-                    if (DailyPriceLoBuf[i] > NewLo)
-                        IsChangedLo = true;
-
-                    i = index;
-
-                    if (IsChangedHi && IsChangedLo)
-                    {
-                        while (ShiftedDate(index, TimeShiftParam) == ShiftedDate(i, TimeShiftParam) && i < Bars())
-                        {
-                            if (IsChangedHi)
-                                DailyPriceHiBuf[i] = NewHi;
-                            if (IsChangedLo)
-                                DailyPriceLoBuf[i] = NewLo;
-                            i = i + 1;
-                        }
-                    }
-
-                    DailyPriceHiBuf[index] = DailyPriceHiBuf[index + 1];
-                    DailyPriceLoBuf[index] = DailyPriceLoBuf[index + 1];
-                }
-                else
-                {
-                    DailyPriceHiBuf[index] = NewHi;
-                    DailyPriceLoBuf[index] = NewLo;
-                }
+                double level = baseLevel - j * step;
+                CreateHLine($"{PrefixMain}DOWN_{j}", level, ToColor(MainColor), MainLineStyle, MainLineWidth);
             }
+
+            // Nächster oberer/unterer Rundungs-Level relativ zum aktuellen Preis
+            double nextUp = (baseLevel >= currentPrice) ? baseLevel : baseLevel + step;
+            double prevDown = (baseLevel <= currentPrice) ? baseLevel : baseLevel - step;
+
+            // Psychologische Zonen (± zOff um nextUp und prevDown)
+            CreateHLine($"{PrefixZone}UP_TOP", nextUp + zOff, ToColor(ZoneColor), ZoneLineStyle, ZoneLineWidth);
+            CreateHLine($"{PrefixZone}UP_BOTTOM", nextUp - zOff, ToColor(ZoneColor), ZoneLineStyle, ZoneLineWidth);
+            CreateHLine($"{PrefixZone}DN_TOP", prevDown + zOff, ToColor(ZoneColor), ZoneLineStyle, ZoneLineWidth);
+            CreateHLine($"{PrefixZone}DN_BOTTOM", prevDown - zOff, ToColor(ZoneColor), ZoneLineStyle, ZoneLineWidth);
         }
 
-        public double GetPriceHigh(int index)
-        {
-            double CurOpen, CurClose;
+        // ===================== Hilfsfunktionen =====================
 
-            switch (ApplytoPrice)
-            {
-                case Applied_Price.PRICE_HIGH:
-                    CurOpen = Open(index);
-                    CurClose = Close(index);
-                    return CurOpen > CurClose ? CurOpen + (DeltaParam * Point()) : CurClose + (DeltaParam * Point());
-                case Applied_Price.PRICE_LOW:
-                    return High(index) + (DeltaParam * Point());
-                default:
-                    return 0;
-            }
+        private static double Sanitize(double v)
+        {
+            if (double.IsNaN(v) || double.IsInfinity(v)) return 0.0;
+            return v;
         }
 
-        public double GetPriceLow(int index)
+        private double RoundToStep(double price, double step)
         {
-            double CurOpen, CurClose;
-
-            switch (ApplytoPrice)
-            {
-                case Applied_Price.PRICE_HIGH:
-                    CurOpen = Open(index);
-                    CurClose = Close(index);
-                    return CurOpen < CurClose ? CurOpen - (DeltaParam * Point()) : CurClose - (DeltaParam * Point());
-                case Applied_Price.PRICE_LOW:
-                    return Low(index) - (DeltaParam * Point());
-                default:
-                    return 0;
-            }
+            // Rundet auf das nächste Vielfache von "step"
+            // (AwayFromZero vermeidet Bias auf halben Schritten)
+            double k = price / step;
+            double r = Math.Round(k, 0, MidpointRounding.AwayFromZero);
+            return r * step;
         }
 
-        public DateTime ShiftedDate(int index, double shift)
+        private void CreateHLine(string name, double price, Color color, LineStyle style, int width)
         {
-            return Time(index).AddHours(shift);
+            // Horizontale Linie: nur der Preis ist relevant (Time = DateTime.MinValue)
+            ObjectCreate(name, ObjectType.OBJ_HLINE, DateTime.MinValue, Normalize(price));
+            ObjectSet(name, ObjectProperty.OBJPROP_COLOR, color);
+            ObjectSet(name, ObjectProperty.OBJPROP_STYLE, style);
+            ObjectSet(name, ObjectProperty.OBJPROP_WIDTH, Math.Max(1, width));
+            ObjectSet(name, ObjectProperty.OBJPROP_LOCKED, LockObjects);
+            ObjectSet(name, ObjectProperty.OBJPROP_SELECTABLE, SelectableObjects);
+        }
+
+        private double Normalize(double price)
+        {
+            // Preis auf Symbolpräzision runden
+            int d = (int)Digits();
+            if (d <= 0) return price;
+            double factor = Math.Pow(10.0, d);
+            return Math.Round(price * factor) / factor;
+        }
+
+        private void DeleteExistingWithPrefix(string prefix)
+        {
+            // Alle HLINE-Objekte einsammeln und die mit unserem Prefix entfernen
+            int total = ObjectTotal(ObjectType.OBJ_HLINE);
+            List<string> toDelete = new List<string>(capacity: total);
+
+            for (int i = 0; i < total; i++)
+            {
+                string name = ObjectName(i);
+                if (!string.IsNullOrEmpty(name) && name.StartsWith(prefix, StringComparison.Ordinal))
+                    toDelete.Add(name);
+            }
+
+            foreach (var n in toDelete)
+                ObjectDelete(n);
+        }
+
+        private Color ToColor(ColorChoice choice)
+        {
+            switch (choice)
+            {
+                case ColorChoice.Red: return Color.Red;
+                case ColorChoice.Gray: return Color.Gray;
+                case ColorChoice.Black: return Color.Black;
+                case ColorChoice.Blue: return Color.Blue;
+                case ColorChoice.Green: return Color.Green;
+                case ColorChoice.Orange: return Color.Orange;
+                case ColorChoice.Magenta: return Color.Magenta;
+                case ColorChoice.Cyan: return Color.Cyan;
+                default: return Color.Red;
+            }
         }
     }
 }

@@ -18,29 +18,32 @@ namespace CustomIndicator
         public int FVG_Lookback = 2000;
 
         [Input(Name = "FVG-Deckkraft (0..255)")]
-        public int FVG_Alpha = 90;   // halbtransparent, gut sichtbar
+        public int FVG_Alpha = 90;
 
         public enum ColorChoice { Gray, Red, Green, Blue, Black, Orange, Magenta, Cyan }
 
         [Input(Name = "FVG-Farbe")]
         public ColorChoice FVG_Color = ColorChoice.Gray;
 
-        // Rand explizit abschaltbar (0 = kein Rand)
-        [Input(Name = "Randbreite (0 = kein Rand)")]
-        public int FVG_BorderWidth = 0;
+        [Input(Name = "Rand optisch ausblenden")]
+        public bool BorderHidden = true;
+
+        [Input(Name = "Randbreite (nur falls sichtbar)")]
+        public int FVG_BorderWidth = 1;
 
         [Input(Name = "Randstil")]
         public LineStyle FVG_BorderStyle = LineStyle.STYLE_SOLID;
 
-        // Projektion in die Zukunft
         [Input(Name = "Box in Zukunft (Bars)")]
         public int ForwardBars = 20;
 
-        // „Start an der verursachenden Kerze“ = mittlere Displacement-Kerze
         [Input(Name = "Start an Displacement-Kerze (Mitte)")]
         public bool StartAtDisplacementCandle = true;
 
-        // Objekt-Eigenschaften
+        // kleine Kanten-Einziehung, damit der (technisch min. 1px) Rand in der Fläche „verschwindet“
+        [Input(Name = "Kanten-Inset (Preis)")]
+        public double EdgeInset = 0.01;
+
         [Input(Name = "Objekte sperren (locked)")]
         public bool LockObjects = true;
 
@@ -48,6 +51,7 @@ namespace CustomIndicator
         public bool SelectableObjects = false;
 
         private const string PrefixFVG = "NM_FVG_";
+        private readonly List<string> _lastDrawn = new List<string>(128);
 
         public override void OnInit()
         {
@@ -59,48 +63,49 @@ namespace CustomIndicator
 
         public override void OnCalculate(int index)
         {
+            // Nur auf der aktuellsten Kerze arbeiten → verhindert mehrfaches Voll-Scanning
+            if (index != 0) return;
+
             ClampInputs();
+            DeletePreviouslyDrawn();
             DrawFVGs();
         }
 
-        // ===== Absicherung der Eingaben =====
         private void ClampInputs()
         {
             if (FVGsAbove < 0) FVGsAbove = 0;
             if (FVGsBelow < 0) FVGsBelow = 0;
-            if (FVG_Lookback < 50) FVG_Lookback = 50;
+            if (FVG_Lookback < 3) FVG_Lookback = 3;
             if (FVG_Alpha < 0) FVG_Alpha = 0;
             if (FVG_Alpha > 255) FVG_Alpha = 255;
-            if (FVG_BorderWidth < 0) FVG_BorderWidth = 0; // 0 erlaubt = kein Rand
+            if (FVG_BorderWidth < 1) FVG_BorderWidth = 1; // API erzwingt meist min. 1px
             if (ForwardBars < 0) ForwardBars = 0;
+            if (EdgeInset < 0.01) EdgeInset = 0.01;       // 0 meiden (manche NumericUpDowns)
         }
 
-        // ===== FVG-Logik =====
         private struct FVG
         {
-            public int LeftIndex;   // älteste Kerze im Setup (n-2)
-            public int MidIndex;    // mittlere (Displacement)-Kerze (n-1)
-            public int RightIndex;  // rechte Kerze im Setup (n)
-            public double Top;      // oberer Preis der Zone
-            public double Bottom;   // unterer Preis der Zone
-            public bool Bullish;    // true = bullish, false = bearish
+            public int LeftIndex;   // älteste Kerze (n-2)
+            public int MidIndex;    // mittlere Displacement-Kerze (n-1)
+            public int RightIndex;  // rechte Kerze (n)
+            public double Top;
+            public double Bottom;
+            public bool Bullish;
         }
 
         private void DrawFVGs()
         {
             int bars = Bars();
-            if (bars < 3)
-            {
-                DeleteExistingWithPrefix(PrefixFVG);
-                return;
-            }
+            if (bars < 3) return;
 
-            int maxScan = Math.Min(bars - 1, Math.Max(50, FVG_Lookback));
+            // Lookback darf verfügbare Bars nie überschreiten
+            int scan = Math.Min(FVG_Lookback, bars);
+            int maxI = scan - 3; // i nutzt i, i+1, i+2
+            if (maxI < 0) return;
 
-            // 0 = aktuelle Kerze, höhere Indizes = weiter in der Vergangenheit
-            // Tripel: [i+2] (links), [i+1] (mitte), [i] (rechts)
+            // 0 = aktuelle Kerze; größere Indizes = Vergangenheit
             List<FVG> found = new List<FVG>(256);
-            for (int i = 0; i <= maxScan - 2; i++)
+            for (int i = 0; i <= maxI; i++)
             {
                 int left = i + 2;
                 int mid = i + 1;
@@ -111,7 +116,7 @@ namespace CustomIndicator
                 double hiR = High(right);
                 double loR = Low(right);
 
-                // Bullish FVG: High[left] < Low[right]  → Zone [High[left], Low[right]]
+                // Bullish FVG
                 if (hiL < loR)
                 {
                     found.Add(new FVG
@@ -124,8 +129,7 @@ namespace CustomIndicator
                         Top = loR
                     });
                 }
-
-                // Bearish FVG: Low[left] > High[right]  → Zone [High[right], Low[left]]
+                // Bearish FVG
                 if (loL > hiR)
                 {
                     found.Add(new FVG
@@ -140,12 +144,12 @@ namespace CustomIndicator
                 }
             }
 
-            // Offene FVGs (geschlossen, wenn spätere Kerzen in Richtung 0 sie erreichen)
+            // offene FVGs (noch nicht „gefüllt“)
             List<FVG> open = new List<FVG>(found.Count);
             foreach (var f in found)
             {
                 bool closed = false;
-                for (int j = f.RightIndex - 1; j >= 0; j--) // neuere Kerzen: ... 2,1,0
+                for (int j = f.RightIndex - 1; j >= 0; j--)
                 {
                     if (f.Bullish)
                     {
@@ -159,7 +163,7 @@ namespace CustomIndicator
                 if (!closed) open.Add(f);
             }
 
-            // Aufteilen nach Lage zum aktuellen Preis
+            // nach Lage zum aktuellen Preis trennen
             double priceNow = Close(0);
             List<FVG> above = new List<FVG>();
             List<FVG> below = new List<FVG>();
@@ -167,52 +171,76 @@ namespace CustomIndicator
             {
                 if (f.Bottom > priceNow) above.Add(f);
                 else if (f.Top < priceNow) below.Add(f);
-                else above.Add(f); // kreuzt aktuellen Preis → zu "above", damit sichtbar
+                else above.Add(f); // schneidet aktuellen Preis → zu "above"
             }
 
-            // Jüngste zuerst (kleinerer RightIndex = jünger)
+            // jüngste zuerst (kleinerer RightIndex = jünger)
             above.Sort((a, b) => a.RightIndex.CompareTo(b.RightIndex));
             below.Sort((a, b) => a.RightIndex.CompareTo(b.RightIndex));
 
             if (FVGsAbove >= 0 && above.Count > FVGsAbove) above = above.GetRange(0, FVGsAbove);
             if (FVGsBelow >= 0 && below.Count > FVGsBelow) below = below.GetRange(0, FVGsBelow);
 
-            // Alte Objekte löschen, neu zeichnen
-            DeleteExistingWithPrefix(PrefixFVG);
-
+            // zeichnen
             int id = 0;
-            foreach (var f in above) DrawFVGRect($"{PrefixFVG}A_{id++}", f);
+            foreach (var f in above) DrawFVGRect(BuildName(f, "A", id++), f);
             id = 0;
-            foreach (var f in below) DrawFVGRect($"{PrefixFVG}B_{id++}", f);
+            foreach (var f in below) DrawFVGRect(BuildName(f, "B", id++), f);
+        }
+
+        private string BuildName(FVG f, string side, int rank)
+        {
+            long tL = Time(f.LeftIndex).Ticks;
+            long tR = Time(f.RightIndex).Ticks;
+            return $"{PrefixFVG}{side}_{(f.Bullish ? "BULL" : "BEAR")}_{tL}_{tR}_{rank}";
         }
 
         private void DrawFVGRect(string name, FVG f)
         {
-            // Linke Zeitkante:
-            // - gewünscht: Start an der verursachenden KerzenKÖRPER → mittlere (Displacement) Kerze
+            // Startzeit: mittlere Displacement-Kerze (oder rechte)
             DateTime leftTime = StartAtDisplacementCandle ? Time(f.MidIndex) : Time(f.RightIndex);
 
-            // Rechte Zeitkante: 20 (o. konfigurierbar) Kerzen in die Zukunft projizieren
+            // Zukunftsprojektion
             TimeSpan barSpan = (Bars() >= 2) ? (Time(0) - Time(1)) : TimeSpan.FromSeconds(1);
-            double forwardSeconds = Math.Max(0, ForwardBars) * barSpan.TotalSeconds;
-            DateTime rightTime = Time(0).AddSeconds(forwardSeconds);
+            DateTime rightTime = Time(0).AddSeconds(Math.Max(0, ForwardBars) * barSpan.TotalSeconds);
 
-            double top = Normalize(f.Top);
-            double bot = Normalize(f.Bottom);
+            double inset = Math.Max(EdgeInset, 0.01);
+            double top = Normalize(f.Top) - (BorderHidden ? inset : 0.0);
+            double bot = Normalize(f.Bottom) + (BorderHidden ? inset : 0.0);
             if (top < bot) { var tmp = top; top = bot; bot = tmp; }
 
-            // Farbe mit Alpha; Randbreite darf 0 sein (→ kein Rand)
-            Color c = Color.FromArgb(Clamp(FVG_Alpha, 0, 255), ToColor(FVG_Color));
+            Color fill = Color.FromArgb(Clamp(FVG_Alpha, 0, 255), ToColor(FVG_Color));
 
             ObjectCreate(name, ObjectType.OBJ_RECTANGLE, leftTime, top, rightTime, bot);
-            ObjectSet(name, ObjectProperty.OBJPROP_COLOR, c);
-            ObjectSet(name, ObjectProperty.OBJPROP_STYLE, FVG_BorderStyle);
-            ObjectSet(name, ObjectProperty.OBJPROP_WIDTH, FVG_BorderWidth); // 0 = kein Rand
+            ObjectSet(name, ObjectProperty.OBJPROP_COLOR, fill);
+
+            if (BorderHidden)
+            {
+                ObjectSet(name, ObjectProperty.OBJPROP_STYLE, LineStyle.STYLE_SOLID);
+                ObjectSet(name, ObjectProperty.OBJPROP_WIDTH, 1); // min. 1px, optisch „weg“
+            }
+            else
+            {
+                ObjectSet(name, ObjectProperty.OBJPROP_STYLE, FVG_BorderStyle);
+                ObjectSet(name, ObjectProperty.OBJPROP_WIDTH, Math.Max(1, FVG_BorderWidth));
+            }
+
             ObjectSet(name, ObjectProperty.OBJPROP_LOCKED, LockObjects);
             ObjectSet(name, ObjectProperty.OBJPROP_SELECTABLE, SelectableObjects);
+
+            _lastDrawn.Add(name);
         }
 
-        // ===== Helpers =====
+        private void DeletePreviouslyDrawn()
+        {
+            if (_lastDrawn.Count == 0) return;
+            foreach (var n in _lastDrawn)
+            {
+                try { ObjectDelete(n); } catch { /* ignore */ }
+            }
+            _lastDrawn.Clear();
+        }
+
         private static int Clamp(int v, int lo, int hi) => v < lo ? lo : (v > hi ? hi : v);
 
         private double Normalize(double price)
@@ -221,19 +249,6 @@ namespace CustomIndicator
             if (d <= 0) return price;
             double factor = Math.Pow(10.0, d);
             return Math.Round(price * factor) / factor;
-        }
-
-        private void DeleteExistingWithPrefix(string prefix)
-        {
-            int total = ObjectTotal(ObjectType.OBJ_RECTANGLE);
-            List<string> del = new List<string>(total);
-            for (int i = 0; i < total; i++)
-            {
-                string name = ObjectName(i);
-                if (!string.IsNullOrEmpty(name) && name.StartsWith(prefix, StringComparison.Ordinal))
-                    del.Add(name);
-            }
-            foreach (var n in del) ObjectDelete(n);
         }
 
         private Color ToColor(ColorChoice c)

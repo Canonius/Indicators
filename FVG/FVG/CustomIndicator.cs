@@ -56,7 +56,7 @@ namespace CustomIndicator
         public override void OnInit()
         {
             Indicator_Separate_Window = false;
-            SetIndicatorShortName("Fair Value Gaps (Projected)");
+            SetIndicatorShortName("1 Fair Value Gaps (Projected)");
             SetIndicatorDigits((int)Digits());
             ClampInputs();
         }

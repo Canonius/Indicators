@@ -40,7 +40,7 @@ namespace CustomIndicator
         [Input(Name = "Start an Displacement-Kerze (Mitte)")]
         public bool StartAtDisplacementCandle = true;
 
-        // kleine Kanten-Einziehung, damit der (technisch min. 1px) Rand in der Fläche „verschwindet“
+        // kleiner Inset (UI mag kein 0); effektiv wird mind. 0.1 Tick genutzt
         [Input(Name = "Kanten-Inset (Preis)")]
         public double EdgeInset = 0.01;
 
@@ -63,7 +63,7 @@ namespace CustomIndicator
 
         public override void OnCalculate(int index)
         {
-            // Nur auf der aktuellsten Kerze arbeiten → verhindert mehrfaches Voll-Scanning
+            // Nur auf der aktuellsten Kerze arbeiten → performant
             if (index != 0) return;
 
             ClampInputs();
@@ -71,6 +71,7 @@ namespace CustomIndicator
             DrawFVGs();
         }
 
+        // ===== Eingaben absichern =====
         private void ClampInputs()
         {
             if (FVGsAbove < 0) FVGsAbove = 0;
@@ -78,11 +79,12 @@ namespace CustomIndicator
             if (FVG_Lookback < 3) FVG_Lookback = 3;
             if (FVG_Alpha < 0) FVG_Alpha = 0;
             if (FVG_Alpha > 255) FVG_Alpha = 255;
-            if (FVG_BorderWidth < 1) FVG_BorderWidth = 1; // API erzwingt meist min. 1px
+            if (FVG_BorderWidth < 1) FVG_BorderWidth = 1; // Plattform erzwingt i. d. R. min. 1 px
             if (ForwardBars < 0) ForwardBars = 0;
-            if (EdgeInset < 0.01) EdgeInset = 0.01;       // 0 meiden (manche NumericUpDowns)
+            if (EdgeInset < 0.01) EdgeInset = 0.01;
         }
 
+        // ===== FVG-Logik =====
         private struct FVG
         {
             public int LeftIndex;   // älteste Kerze (n-2)
@@ -200,35 +202,50 @@ namespace CustomIndicator
             // Startzeit: mittlere Displacement-Kerze (oder rechte)
             DateTime leftTime = StartAtDisplacementCandle ? Time(f.MidIndex) : Time(f.RightIndex);
 
-            // Zukunftsprojektion
-            TimeSpan barSpan = (Bars() >= 2) ? (Time(0) - Time(1)) : TimeSpan.FromSeconds(1);
-            DateTime rightTime = Time(0).AddSeconds(Math.Max(0, ForwardBars) * barSpan.TotalSeconds);
+            // Zukunftsprojektion: mediane Bar-Länge der letzten 50 Bars (robust)
+            double secPerBar = MedianBarSeconds(50);
+            DateTime rightTime = Time(0).AddSeconds(Math.Max(0, ForwardBars) * secPerBar);
 
-            double inset = Math.Max(EdgeInset, 0.01);
+            // Inset mind. 0.1 Tick
+            double minInset = Math.Max(Point() * 0.1, 1e-12);
+            double inset = Math.Max(EdgeInset, minInset);
+
             double top = Normalize(f.Top) - (BorderHidden ? inset : 0.0);
             double bot = Normalize(f.Bottom) + (BorderHidden ? inset : 0.0);
             if (top < bot) { var tmp = top; top = bot; bot = tmp; }
 
+            // Füll- & Randfarbe identisch (inkl. Alpha) → kein sichtbarer Rand
             Color fill = Color.FromArgb(Clamp(FVG_Alpha, 0, 255), ToColor(FVG_Color));
 
             ObjectCreate(name, ObjectType.OBJ_RECTANGLE, leftTime, top, rightTime, bot);
             ObjectSet(name, ObjectProperty.OBJPROP_COLOR, fill);
-
-            if (BorderHidden)
-            {
-                ObjectSet(name, ObjectProperty.OBJPROP_STYLE, LineStyle.STYLE_SOLID);
-                ObjectSet(name, ObjectProperty.OBJPROP_WIDTH, 1); // min. 1px, optisch „weg“
-            }
-            else
-            {
-                ObjectSet(name, ObjectProperty.OBJPROP_STYLE, FVG_BorderStyle);
-                ObjectSet(name, ObjectProperty.OBJPROP_WIDTH, Math.Max(1, FVG_BorderWidth));
-            }
-
+            ObjectSet(name, ObjectProperty.OBJPROP_STYLE, BorderHidden ? LineStyle.STYLE_SOLID : FVG_BorderStyle);
+            ObjectSet(name, ObjectProperty.OBJPROP_WIDTH, BorderHidden ? 1 : Math.Max(1, FVG_BorderWidth));
             ObjectSet(name, ObjectProperty.OBJPROP_LOCKED, LockObjects);
             ObjectSet(name, ObjectProperty.OBJPROP_SELECTABLE, SelectableObjects);
 
             _lastDrawn.Add(name);
+        }
+
+        // robuste Schätzung der Bar-Länge (Sekunden) via Median
+        private double MedianBarSeconds(int sample)
+        {
+            int bars = Bars();
+            int n = Math.Min(Math.Max(sample, 2), bars - 1);
+            if (n < 1) return 60.0;
+
+            List<double> secs = new List<double>(n);
+            for (int i = 0; i < n; i++)
+            {
+                TimeSpan dt = Time(i) - Time(i + 1);
+                double s = Math.Abs(dt.TotalSeconds);
+                if (s > 0.0) secs.Add(s);
+            }
+            if (secs.Count == 0) return 60.0;
+
+            secs.Sort();
+            int mid = secs.Count / 2;
+            return (secs.Count % 2 == 1) ? secs[mid] : (secs[mid - 1] + secs[mid]) / 2.0;
         }
 
         private void DeletePreviouslyDrawn()

@@ -7,6 +7,10 @@ namespace CustomIndicator
 {
     public class CustomIndicator : IndicatorInterface
     {
+        // ========= Build Info =========
+        [Input(Name = "Build Info")]
+        public string BuildInfo = "Erstellt am: 28.09.2025 14:34 (MESZ)";
+
         // ========= Eingabe-Parameter =========
 
         [Input(Name = "Linien oben")]
@@ -100,10 +104,9 @@ namespace CustomIndicator
         // FIFO der Signal-Objekte
         private readonly Queue<string> _signalObjects = new Queue<string>();
 
-        // ======= Neu: Anti-Doppel-Signal pro Level =======
+        // Anti-Doppelsignal pro Level
         private enum SignalSide { None = 0, Bull = 1, Bear = 2 }
         private readonly Dictionary<double, SignalSide> _lastSidePerLevel = new Dictionary<double, SignalSide>();
-        // ==================================================
 
         public override void OnInit()
         {
@@ -187,17 +190,16 @@ namespace CustomIndicator
 
             bool bullSignal = false;
             bool bearSignal = false;
-            double bullLevelUsed = double.NaN; // <- Level, auf dem das Signal basiert
+            double bullLevelUsed = double.NaN;
             double bearLevelUsed = double.NaN;
 
             if (Mode == SignalMode.TouchThenZoneClose)
             {
-                // Alle berührten runden Levels der Bar
                 double first = Math.Ceiling(lowB / step) * step;
                 double last = Math.Floor(highB / step) * step;
 
-                double? touchedClosestAboveOpen = null; // kleinstes berührtes Level >= open
-                double? touchedClosestBelowOpen = null; // größtes  berührtes Level <= open
+                double? touchedClosestAboveOpen = null;
+                double? touchedClosestBelowOpen = null;
 
                 if (last >= first)
                 {
@@ -233,7 +235,7 @@ namespace CustomIndicator
                     bearLevelUsed = usedLevel;
                 }
             }
-            else // OpenSideThenZoneClose
+            else
             {
                 bullSignal = (openB < nextUpB) && (closeB > upperTopB);
                 bearSignal = (openB > prevDownB) && (closeB < lowerBotB);
@@ -241,14 +243,13 @@ namespace CustomIndicator
                 bearLevelUsed = prevDownB;
             }
 
-            // ======= Neu: pro Level keine gleiche Richtung zweimal hintereinander =======
             if (bullSignal && !double.IsNaN(bullLevelUsed))
             {
                 if (AllowedForLevel(bullLevelUsed, SignalSide.Bull))
                 {
                     string name = $"{PrefixSig}BULL_{t:yyyyMMdd_HHmmss}";
                     double y = highB + mOff;
-                    CreateTriangleText(name, t, y, "▲", ToColor(BullMarkerColor));
+                    CreateTriangleText(name, t, y, "▲", ToColor(BullMarkerColor)); // Bull über der Kerze
                     AddSignalObject(name);
                 }
             }
@@ -259,19 +260,15 @@ namespace CustomIndicator
                 {
                     string name = $"{PrefixSig}BEAR_{t:yyyyMMdd_HHmmss}";
                     double y = lowB - mOff;
-                    CreateTriangleText(name, t, y, "▼", ToColor(BearMarkerColor));
+                    CreateTriangleText(name, t, y, "▼", ToColor(BearMarkerColor)); // Bear unter der Kerze
                     AddSignalObject(name);
                 }
             }
-            // ============================================================================
-
         }
 
-        // Gibt true zurück, wenn auf diesem Level die Richtung erlaubt ist (nicht doppelt),
-        // und aktualisiert die Merker-Map entsprechend.
         private bool AllowedForLevel(double level, SignalSide side)
         {
-            double key = Normalize(level); // stabiler Key
+            double key = Normalize(level);
             if (_lastSidePerLevel.TryGetValue(key, out var prev) && prev == side)
                 return false;
 
@@ -279,7 +276,6 @@ namespace CustomIndicator
             return true;
         }
 
-        // FIFO-Handling für Markierungen
         private void AddSignalObject(string name)
         {
             _signalObjects.Enqueue(name);
@@ -291,8 +287,6 @@ namespace CustomIndicator
                 ObjectDelete(oldest);
             }
         }
-
-        // ===================== Hilfsfunktionen =====================
 
         private static double Sanitize(double v) => (double.IsNaN(v) || double.IsInfinity(v)) ? 0.0 : v;
 
@@ -311,7 +305,7 @@ namespace CustomIndicator
 
         private void CreateHLine(string name, double price, Color color, LineStyle style, int width)
         {
-            ObjectDelete(name); // doppelte Namen vermeiden
+            ObjectDelete(name);
             ObjectCreate(name, ObjectType.OBJ_HLINE, DateTime.MinValue, Normalize(price));
             ObjectSet(name, ObjectProperty.OBJPROP_COLOR, color);
             ObjectSet(name, ObjectProperty.OBJPROP_STYLE, style);

@@ -18,69 +18,72 @@ namespace Sessions
 
         [Input(Name = "Number of days")]
         public int NumberOfDays = 3;
-        [Separator(Label = "Tokyo parameters")]
-        public string Separator_Tokyo;
-        [Input(Name = "Tokyo start hour")]
-        public HoursOfDay TokyoStartHour = HoursOfDay.Hour_0;
-        [Input(Name = "Tokyo start minute")]
-        public MinutesOfDay TokyoStartMinute = MinutesOfDay.Minute_0;
-        [Input(Name = "Tokyo end hour")]
-        public HoursOfDay TokyoEndHour = HoursOfDay.Hour_8;
-        [Input(Name = "Tokyo end minute")]
-        public MinutesOfDay TokyoEndMinute = MinutesOfDay.Minute_0;
-        [Input(Name = "Tokyo color")]
-        public Color TokyoColor = Color.Yellow;
-        [Separator(Label = "London parameters")]
-        public string Separator_London;
-        [Input(Name = "London start hour")]
-        public HoursOfDay LondonStartHour = HoursOfDay.Hour_7;
-        [Input(Name = "London start minute")]
-        public MinutesOfDay LondonStartMinute = MinutesOfDay.Minute_0;
-        [Input(Name = "London end hour")]
-        public HoursOfDay LondonEndHour = HoursOfDay.Hour_16;
-        [Input(Name = "London end minute")]
-        public MinutesOfDay LondonEndMinute = MinutesOfDay.Minute_0;
-        [Input(Name = "London color")]
-        public Color LondonColor = Color.Blue;
-        [Separator(Label = "New-York parameters")]
+        [Separator(Label = "A_Session parameters")]
+        public string Separator_A_Session;
+        [Input(Name = "A_Session start hour")]
+        public HoursOfDay A_SessionStartHour = HoursOfDay.Hour_8;
+        [Input(Name = "A_Session start minute")]
+        public MinutesOfDay A_SessionStartMinute = MinutesOfDay.Minute_0;
+        [Input(Name = "A_Session end hour")]
+        public HoursOfDay A_SessionEndHour = HoursOfDay.Hour_14;
+        [Input(Name = "A_Session end minute")]
+        public MinutesOfDay A_SessionEndMinute = MinutesOfDay.Minute_30;
+        [Input(Name = "A_Session color")]
+        public Color A_SessionColor = Color.Gray;
+
+        [Separator(Label = "B_Session parameters")]
+        public string Separator_B_Session;
+        [Input(Name = "B_Session start hour")]
+        public HoursOfDay B_SessionStartHour = HoursOfDay.Hour_18;
+        [Input(Name = "B_Session start minute")]
+        public MinutesOfDay B_SessionStartMinute = MinutesOfDay.Minute_0;
+        [Input(Name = "B_Session end hour")]
+        public HoursOfDay B_SessionEndHour = HoursOfDay.Hour_21;
+        [Input(Name = "B_Session end minute")]
+        public MinutesOfDay B_SessionEndMinute = MinutesOfDay.Minute_0;
+        [Input(Name = "B_Session color")]
+        public Color B_SessionColor = Color.Gray;
+
+        [Separator(Label = "C_Session parameters")]
         public string Separator_USA;
-        [Input(Name = "New-York start hour")]
-        public  HoursOfDay NYStartHour = HoursOfDay.Hour_12;
-        [Input(Name = "New-York start minute")]
+        [Input(Name = "C_Session start hour")]
+        public HoursOfDay NYStartHour = HoursOfDay.Hour_12;
+        [Input(Name = "C_Session start minute")]
         public MinutesOfDay NYStartMinute = MinutesOfDay.Minute_0;
-        [Input(Name = "New-York end hour")]
+        [Input(Name = "C_Session end hour")]
         public HoursOfDay NYEndHour = HoursOfDay.Hour_20;
-        [Input(Name = "New-York end minute")]
+        [Input(Name = "C_Session end minute")]
         public MinutesOfDay NYEndMinute = MinutesOfDay.Minute_0;
-        [Input(Name = "New-York color")]
+        [Input(Name = "C_Session color")]
         public Color NYColor = Color.Green;
-        [Separator(Label = "Sydney parameters")]
-        public string Separator_Sydney;
-        [Input(Name = "Sydney start hour")]
-        public HoursOfDay SydneyStartHour = HoursOfDay.Hour_9;
-        [Input(Name = "Sydney start minute")]
-        public MinutesOfDay SydneyStartMinute = MinutesOfDay.Minute_0;
-        [Input(Name = "Sydney end hour")]
-        public HoursOfDay SydneyEndHour = HoursOfDay.Hour_18;
-        [Input(Name = "Sydney start minute")]
-        public MinutesOfDay SydneyEndMinute = MinutesOfDay.Minute_0;
-        [Input(Name = "Sydney color")]
-        public Color SydneyColor = Color.Red;
+
+        [Separator(Label = "D_Session parameters")]
+        public string Separator_D_Session;
+        [Input(Name = "D_Session start hour")]
+        public HoursOfDay D_SessionStartHour = HoursOfDay.Hour_9;
+        [Input(Name = "D_Session start minute")]
+        public MinutesOfDay D_SessionStartMinute = MinutesOfDay.Minute_0;
+        [Input(Name = "D_Session end hour")]
+        public HoursOfDay D_SessionEndHour = HoursOfDay.Hour_18;
+        [Input(Name = "D_Session start minute")]
+        public MinutesOfDay D_SessionEndMinute = MinutesOfDay.Minute_0;
+        [Input(Name = "D_Session color")]
+        public Color D_SessionColor = Color.Red;
 
         [Separator(Label = "Sessions parameters")]
         public string Separator_visibility;
-        [Input(Name = "Show Tokyo session")]
-        public bool ShowTokyo = true;
-        [Input(Name = "Show London session")]
-        public bool ShowLondon = true;
-        [Input(Name = "Show New-York session")]
-        public bool ShowNY = true;
-        [Input(Name = "Show Sydney session")]
-        public bool ShowSydney = false;
+        [Input(Name = "Show A_Session session")]
+        public bool ShowA_Session = true;
+        [Input(Name = "Show B_Session session")]
+        public bool ShowB_Session = true;
+        [Input(Name = "Show C_Session session")]
+        public bool ShowNY = false;
+        [Input(Name = "Show D_Session session")]
+        public bool ShowD_Session = false;
 
         public override void OnInit()
         {
-            SetIndicatorShortName("Trading sessions");
+            SetIndicatorShortName("------ GoldenEra sessions");
             Indicator_Separate_Window = false;
         }
 
@@ -89,24 +92,24 @@ namespace Sessions
             DeleteObjects();
 
             // The colors are set to be semi-transparent by changing the Alpha channel
-            TokyoColor = Color.FromArgb(100, TokyoColor);
-            LondonColor = Color.FromArgb(100, LondonColor);
+            A_SessionColor = Color.FromArgb(100, A_SessionColor);
+            B_SessionColor = Color.FromArgb(100, B_SessionColor);
             NYColor = Color.FromArgb(100, NYColor);
-            SydneyColor = Color.FromArgb(100, SydneyColor);
+            D_SessionColor = Color.FromArgb(100, D_SessionColor);
 
             for (int i = 0; i < NumberOfDays; i++)
             {
-                if(ShowTokyo)
-                    CreateObjects("TO" + i, TokyoColor);
+                if (ShowA_Session)
+                    CreateObjects("TO" + i, A_SessionColor);
 
-                if(ShowLondon)
-                    CreateObjects("LO" + i, LondonColor);
+                if (ShowB_Session)
+                    CreateObjects("LO" + i, B_SessionColor);
 
-                if(ShowNY)
+                if (ShowNY)
                     CreateObjects("NY" + i, NYColor);
 
-                if(ShowSydney)
-                    CreateObjects("SY" + i, SydneyColor);
+                if (ShowD_Session)
+                    CreateObjects("SY" + i, D_SessionColor);
             }
 
             DrawSessions();
@@ -128,17 +131,17 @@ namespace Sessions
 
             for (int i = 0; i < NumberOfDays; i++)
             {
-                if (ShowTokyo)
-                    DrawObjects(CurrentTime, "TO" + i, TokyoStartHour, TokyoStartMinute, TokyoEndHour, TokyoEndMinute);
+                if (ShowA_Session)
+                    DrawObjects(CurrentTime, "TO" + i, A_SessionStartHour, A_SessionStartMinute, A_SessionEndHour, A_SessionEndMinute);
 
-                if (ShowLondon)
-                    DrawObjects(CurrentTime, "LO" + i, LondonStartHour, LondonStartMinute, LondonEndHour, LondonEndMinute);
+                if (ShowB_Session)
+                    DrawObjects(CurrentTime, "LO" + i, B_SessionStartHour, B_SessionStartMinute, B_SessionEndHour, B_SessionEndMinute);
 
                 if (ShowNY)
                     DrawObjects(CurrentTime, "NY" + i, NYStartHour, NYStartMinute, NYEndHour, NYEndMinute);
 
-                if (ShowSydney)
-                    DrawObjects(CurrentTime, "SY" + i, SydneyStartHour, SydneyStartMinute, SydneyEndHour, SydneyEndMinute);
+                if (ShowD_Session)
+                    DrawObjects(CurrentTime, "SY" + i, D_SessionStartHour, D_SessionStartMinute, D_SessionEndHour, D_SessionEndMinute);
 
                 CurrentTime = CurrentTime.AddDays(-1);
                 // We skip the weekends
@@ -178,7 +181,7 @@ namespace Sessions
             ObjectSet(ObjectName, ObjectProperty.OBJPROP_TIME1, SessionStart);
             ObjectSet(ObjectName, ObjectProperty.OBJPROP_PRICE1, HighestValue * 1.5);
             ObjectSet(ObjectName, ObjectProperty.OBJPROP_TIME2, SessionEnd);
-            ObjectSet(ObjectName, ObjectProperty.OBJPROP_PRICE2, LowestValue * 0.5);            
+            ObjectSet(ObjectName, ObjectProperty.OBJPROP_PRICE2, LowestValue * 0.5);
         }
 
         public enum HoursOfDay

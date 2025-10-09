@@ -18,7 +18,7 @@ namespace CustomIndicator
         [Input(Name = "Lines below")]
         public int LinesBelow = 10;
 
-        [Input(Name = "Step (Preis)")]
+        [Input(Name = "Step (Price)?")]
         public double Step = 5.0;
 
         [Input(Name = "Step in Points?")]
